@@ -852,7 +852,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::WeaponHolder
   handPoint: {fileID: 130342142}
-  throwForce: 15
+  throwForce: 25
 --- !u!1 &1293941124
 GameObject:
   m_ObjectHideFlags: 0

@@ -2,9 +2,8 @@ using UnityEngine;
 
 public class WeaponHolder : MonoBehaviour
 {
-    [Header("Weapon Settings")]
     [SerializeField] private Transform handPoint;
-    [SerializeField] private float throwForce = 15f;
+    [SerializeField] private float throwForce = 25f;
 
     private GameObject currentWeapon;
     private GameObject nearbyWeapon;
@@ -24,10 +23,7 @@ public class WeaponHolder : MonoBehaviour
         {
             PickUp(nearbyWeapon);
         }
-        else
-        {
-            Debug.Log("No weapon in pickup range.");
-        }
+        
     }
 
     private void OnTriggerEnter2D(Collider2D other)
@@ -81,11 +77,7 @@ public class WeaponHolder : MonoBehaviour
 
     private void PickUp(GameObject weapon)
     {
-        if (handPoint == null)
-        {
-            Debug.LogError("HandPoint has not been assigned.", gameObject);
-            return;
-        }
+        
 
         currentWeapon = weapon;
         nearbyWeapon = null;
@@ -141,34 +133,31 @@ public class WeaponHolder : MonoBehaviour
 
         Rigidbody2D rb = weapon.GetComponent<Rigidbody2D>();
 
-        if (rb == null)
-        {
-            Debug.LogError(
-                $"{weapon.name} does not have a Rigidbody2D.",
-                weapon
-            );
-
-            return;
-        }
-
-        rb.simulated = true;
+       
 
         Camera mainCamera = Camera.main;
 
-        if (mainCamera == null)
-        {
-            Debug.LogError("No camera with the MainCamera tag exists.");
-            return;
-        }
+       
+
+        rb.simulated = true;
 
         Vector3 mouseWorldPosition =
             mainCamera.ScreenToWorldPoint(Input.mousePosition);
 
-        mouseWorldPosition.z = transform.position.z;
-
         Vector2 throwDirection =
-            (mouseWorldPosition - transform.position).normalized;
+            ((Vector2)mouseWorldPosition - (Vector2)transform.position).normalized;
 
-        rb.linearVelocity = throwDirection * throwForce;
+        rb.linearVelocity = Vector2.zero;
+        rb.angularVelocity = 0f;
+
+        rb.linearDamping = 3f;
+        rb.angularDamping = 2f;
+
+        rb.AddForce(
+            throwDirection * throwForce,
+            ForceMode2D.Impulse
+        );
+
+        rb.AddTorque(8f, ForceMode2D.Impulse);
     }
 }
