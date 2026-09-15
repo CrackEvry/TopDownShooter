@@ -21,7 +21,12 @@ public class CollisionDetection : MonoBehaviour
             aichase.enabled = true;
             //Debug.Log("Player gedetecteerd, AIChase staat aan.");
         }
+        
+        Debug.Log("Naam" + collision.name);  
     }
     //    Enemy.GetComponent<AIChase>().enabled = false;
     //    Debug.Log("Detectie aangeraakt");
+    
+    
+   
 }

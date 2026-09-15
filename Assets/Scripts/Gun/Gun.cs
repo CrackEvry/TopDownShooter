@@ -15,26 +15,17 @@ public class Gun : MonoBehaviour
 
     public void Fire()
     {
-        if (firePoint == null)
+        GameObject bulletObject = Instantiate(
+            bullet,
+            firePoint.position,
+            firePoint.rotation
+        );
+
+        Bullet bulletScript = bulletObject.GetComponent<Bullet>();
+
+        if (bulletScript != null)
         {
-            Debug.LogError(
-                $"FirePoint ontbreekt op gun: {gameObject.name}",
-                gameObject
-            );
-
-            return;
+            bulletScript.IgnoreOwner(transform.root.gameObject);
         }
-
-        if (bullet == null)
-        {
-            Debug.LogError(
-                $"Bullet ontbreekt op gun: {gameObject.name}",
-                gameObject
-            );
-
-            return;
-        }
-
-        Instantiate(bullet, firePoint.position, firePoint.rotation);
     }
 }

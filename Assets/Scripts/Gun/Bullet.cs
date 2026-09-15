@@ -2,10 +2,9 @@ using UnityEngine;
 
 public class Bullet : MonoBehaviour
 {
-    [Header("Bullet Settings")]
     [SerializeField] private float bulletSpeed = 20f;
     [SerializeField] private float bulletLife = 2f;
-    [SerializeField] private float bulletDamage = 1f;
+    [SerializeField] private int bulletDamage = 1;
 
     private Rigidbody2D rb;
     private Collider2D bulletCollider;
@@ -55,6 +54,11 @@ public class Bullet : MonoBehaviour
 
     private void Hit(GameObject hitObject)
     {
+        if (hitObject.CompareTag("Bypass"))
+        {
+            return;
+        }
+
         if (hasHit)
         {
             return;
@@ -62,22 +66,13 @@ public class Bullet : MonoBehaviour
 
         hasHit = true;
 
-        Debug.Log(
-            $"{name} raakte {hitObject.name} " +
-            $"voor {bulletDamage} damage.",
-            hitObject
-        );
+        EnemyHealth enemyHealth =
+            hitObject.GetComponent<EnemyHealth>();
 
-        // Voeg hier later je damage-systeem toe.
-        // Bijvoorbeeld:
-        //
-        // EnemyHealth health =
-        //     hitObject.GetComponentInParent<EnemyHealth>();
-        //
-        // if (health != null)
-        // {
-        //     health.TakeDamage(bulletDamage);
-        // }
+        if (enemyHealth != null)
+        {
+            enemyHealth.TakeDamage(bulletDamage);
+        }
 
         Destroy(gameObject);
     }

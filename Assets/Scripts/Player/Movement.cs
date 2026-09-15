@@ -1,32 +1,35 @@
 using UnityEngine;
 
+[RequireComponent(typeof(Rigidbody2D))]
 public class Movement : MonoBehaviour
 {
-    [SerializeField] int speed = 5;
-    void Start()
+    [Header("Movement")]
+    [SerializeField] private float speed = 7f;
+
+    private Rigidbody2D rb;
+    private Vector2 moveInput;
+
+    public Vector2 MoveInput => moveInput;
+    public Vector2 Velocity => rb != null ? rb.linearVelocity : Vector2.zero;
+    public bool IsMoving => moveInput.sqrMagnitude > 0.001f;
+
+    private void Awake()
     {
-        
+        rb = GetComponent<Rigidbody2D>();
+        rb.gravityScale = 0f;
+        rb.freezeRotation = true;
     }
 
-    void Update()
+    private void Update()
     {
-        if (Input.GetKey(KeyCode.W))
-        {
-            transform.Translate(Vector2.up * speed * Time.deltaTime, Space.World);
-        }
+        moveInput = new Vector2(
+            Input.GetAxisRaw("Horizontal"),
+            Input.GetAxisRaw("Vertical")
+        ).normalized;
+    }
 
-        if (Input.GetKey(KeyCode.S))
-        {
-            transform.Translate(Vector2.down * speed * Time.deltaTime, Space.World);
-        }
-        if (Input.GetKey(KeyCode.A))
-        {
-            transform.Translate(Vector2.left * speed * Time.deltaTime, Space.World);
-        }
-        if (Input.GetKey(KeyCode.D))
-        {
-            transform.Translate(Vector2.right * speed * Time.deltaTime, Space.World);
-        }
-
+    private void FixedUpdate()
+    {
+        rb.linearVelocity = moveInput * speed;
     }
 }
