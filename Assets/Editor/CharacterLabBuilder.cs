@@ -20,6 +20,7 @@ public static class CharacterLabBuilder
     // Also callable from Unity batch mode. Never writes the existing SampleScene.
     public static void Build()
     {
+        if (File.Exists(Folder + "/CharacterLab.unity")) { Upgrade(); return; }
         Directory.CreateDirectory(Folder);
         AssetDatabase.Refresh();
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
@@ -89,8 +90,42 @@ public static class CharacterLabBuilder
             renderer.sprite = targetSprite; renderer.sharedMaterial = material; renderer.sortingOrder = 2;
             target.AddComponent<BoxCollider2D>(); target.AddComponent<CharacterTestTarget>();
         }
+        AddWeapons(controller, sheet);
         EditorSceneManager.SaveScene(scene, Folder + "/CharacterLab.unity");
         AssetDatabase.SaveAssets();
         Debug.Log("CHARACTER_LAB_BUILD_OK: scene and player prefab saved.");
+    }
+
+    public static void Upgrade()
+    {
+        var scene = EditorSceneManager.OpenScene(Folder + "/CharacterLab.unity");
+        var player = Object.FindFirstObjectByType<ActionPlayer>();
+        if (player == null) throw new System.InvalidOperationException("Character Lab player missing.");
+        AddWeapons(player, player.characterSheet);
+        EditorSceneManager.SaveScene(scene);
+        AssetDatabase.SaveAssets();
+        Debug.Log("CHARACTER_LAB_BUILD_OK: four pickups, unarmed player and weapon prefabs saved.");
+    }
+
+    static void AddWeapons(ActionPlayer player, Texture2D sheet)
+    {
+        player.startingWeapon = CharacterWeapon.Unarmed;
+        // The reference GIF has eight frames at 100 ms: one cycle per 0.8 s at speed 7.
+        player.strideLength = 5.6f;
+        PrefabUtility.SaveAsPrefabAsset(player.gameObject, Folder + "/Player.prefab");
+        string weaponFolder = Folder + "/Weapons";
+        Directory.CreateDirectory(weaponFolder); AssetDatabase.Refresh();
+        var root = GameObject.Find("Weapon pickups") ?? new GameObject("Weapon pickups");
+        for (int i = 1; i <= 4; i++)
+        {
+            var kind = (CharacterWeapon)i;
+            Transform existing = root.transform.Find(kind.ToString());
+            var obj = existing != null ? existing.gameObject : new GameObject(kind.ToString());
+            obj.transform.SetParent(root.transform, false);
+            obj.transform.localPosition = new Vector3(-2.4f + (i - 1) * 1.6f, -3.6f, 0);
+            var pickup = obj.GetComponent<WorldWeapon>() ?? obj.AddComponent<WorldWeapon>();
+            pickup.characterSheet = sheet; pickup.kind = kind; pickup.ammo = CharacterWeaponSettings.For(kind).Capacity;
+            PrefabUtility.SaveAsPrefabAsset(obj, weaponFolder + "/" + kind + ".prefab");
+        }
     }
 }

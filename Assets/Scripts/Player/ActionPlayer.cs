@@ -1,161 +1,216 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-// The physics root never rotates. Feet follow travel; shoulders follow the cursor.
 [RequireComponent(typeof(Rigidbody2D), typeof(CircleCollider2D))]
 public class ActionPlayer : MonoBehaviour
 {
     public Texture2D characterSheet;
-    [Min(0)] public float moveSpeed = 7f;
-    [Min(0.02f)] public float shotInterval = 0.12f;
-    public float strideLength = 1.15f;
+    public CharacterWeapon startingWeapon = CharacterWeapon.Unarmed;
+    [Min(0)] public float moveSpeed = 7;
+    [Min(0.5f)] public float strideLength = 5.6f;
     public LayerMask shotMask = ~0;
-    public int magazineSize = 12;
-    public float reloadSeconds = 0.75f;
+    public float pickupRadius = 1.35f;
+    public CharacterWeapon EquippedWeapon { get; private set; }
+    public CharacterWeaponSettings Weapon => CharacterWeaponSettings.For(EquippedWeapon);
     public int Ammo { get; private set; }
+    public int magazineSize => Weapon.Capacity;
     public bool Reloading => reloadUntil > 0;
+    public bool Attacking => attackStarted >= 0;
     public Vector2 AimDirection { get; private set; } = Vector2.right;
     public Vector2 TravelVelocity { get; private set; }
     public float ShotKick { get; private set; }
+    public CharacterBodyVisual BodyVisual { get; private set; }
+    public WorldWeapon NearbyWeapon { get; private set; }
+    public int LastPelletCount { get; private set; }
     Rigidbody2D body;
     Camera view;
-    Transform shoulders, legs, leftFoot, rightFoot, flash;
-    SpriteRenderer torso;
+    CharacterSpriteAtlas atlas;
     Vector2 input, previousPosition;
-    float phase, nextShot, reloadUntil, flashUntil;
-    readonly RaycastHit2D[] hits = new RaycastHit2D[32];
-    Material spriteMaterial;
-    readonly System.Collections.Generic.List<Sprite> sprites = new System.Collections.Generic.List<Sprite>();
+    float nextActionTime, reloadUntil, flashUntil, attackStarted = -1;
+    Vector2 attackDirection;
+    readonly RaycastHit2D[] hits = new RaycastHit2D[64];
+    readonly Collider2D[] overlaps = new Collider2D[64];
+    readonly HashSet<GameObject> struck = new HashSet<GameObject>();
 
     void Awake()
     {
         body = GetComponent<Rigidbody2D>();
-        body.gravityScale = 0;
-        body.freezeRotation = true;
+        body.gravityScale = 0; body.freezeRotation = true;
         body.interpolation = RigidbodyInterpolation2D.Interpolate;
         body.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
         GetComponent<CircleCollider2D>().radius = 0.30f;
-        view = Camera.main;
         previousPosition = body.position;
-        Ammo = magazineSize;
-        spriteMaterial = new Material(Shader.Find("Sprites/Default"));
-        legs = new GameObject("Legs - travel direction").transform;
-        legs.SetParent(transform, false);
-        leftFoot = Part("Left foot", legs, Slice(9, 464, 7, 15), 1).transform;
-        rightFoot = Part("Right foot", legs, Slice(9, 464, 7, 15), 1).transform;
-        shoulders = new GameObject("Shoulders - mouse aim").transform;
-        shoulders.SetParent(transform, false);
-        // Pistol pose from the supplied sheet. Pivot aligns the head with the root.
-        torso = Part("Pistol stance", shoulders, Slice(5, 527, 23, 28, new Vector2(0.48f, 0.72f)), 3);
-        torso.transform.localRotation = Quaternion.Euler(0, 0, 90);
-        flash = Part("Muzzle flash", shoulders, Slice(232, 220, 15, 16), 5).transform;
-        flash.localPosition = new Vector3(0.84f, -0.18f, 0);
-        flash.localScale = Vector3.one * 0.65f;
-        flash.gameObject.SetActive(false);
-    }
-
-    Sprite Slice(int x, int y, int w, int h, Vector2? pivot = null)
-    {
-        var sprite = Sprite.Create(characterSheet, new Rect(x, y, w, h), pivot ?? Vector2.one * 0.5f, 24);
-        sprites.Add(sprite);
-        return sprite;
-    }
-
-    SpriteRenderer Part(string label, Transform parent, Sprite sprite, int order)
-    {
-        var part = new GameObject(label).AddComponent<SpriteRenderer>();
-        part.transform.SetParent(parent, false);
-        part.sprite = sprite;
-        part.sharedMaterial = spriteMaterial;
-        part.sortingOrder = order;
-        return part;
+        view = Camera.main;
+        if (characterSheet == null) { Debug.LogError("Assign the Jestan character atlas to ActionPlayer.", this); enabled = false; return; }
+        atlas = new CharacterSpriteAtlas(characterSheet);
+        BodyVisual = new CharacterBodyVisual(transform, atlas);
+        Equip(startingWeapon, CharacterWeaponSettings.For(startingWeapon).Capacity);
     }
 
     void Update()
     {
         var keyboard = Keyboard.current;
         var mouse = Mouse.current;
-        input = Vector2.zero;
-        if (keyboard != null && Application.isFocused)
+        SetMoveInput(Vector2.zero);
+        if (Application.isFocused)
         {
-            input.x = (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed ? 1 : 0) - (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed ? 1 : 0);
-            input.y = (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed ? 1 : 0) - (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed ? 1 : 0);
-            input = Vector2.ClampMagnitude(input, 1);
-            if (keyboard.rKey.wasPressedThisFrame && Ammo < magazineSize && !Reloading)
-                reloadUntil = Time.time + reloadSeconds;
+            if (keyboard != null)
+            {
+                SetMoveInput(new Vector2(
+                    (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed ? 1 : 0) - (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed ? 1 : 0),
+                    (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed ? 1 : 0) - (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed ? 1 : 0)));
+                if (keyboard.rKey.wasPressedThisFrame) TryReload();
+                if (keyboard.qKey.wasPressedThisFrame) DropWeapon();
+            }
+            if (mouse != null && view != null)
+            {
+                Vector2 delta = (Vector2)view.ScreenToWorldPoint(mouse.position.ReadValue()) - (Vector2)transform.position;
+                SetAimDirection(delta);
+            }
+            if ((keyboard != null && keyboard.eKey.wasPressedThisFrame) || (mouse != null && mouse.rightButton.wasPressedThisFrame)) TryPickupNearest();
+            if (mouse != null) TryAttack(mouse.leftButton.wasPressedThisFrame, mouse.leftButton.isPressed);
         }
-        if (Reloading && Time.time >= reloadUntil) { Ammo = magazineSize; reloadUntil = 0; }
-        if (mouse != null && view != null)
-        {
-            Vector2 delta = (Vector2)view.ScreenToWorldPoint(mouse.position.ReadValue()) - (Vector2)transform.position;
-            if (delta.sqrMagnitude > 0.01f) AimDirection = delta.normalized;
-            shoulders.rotation = Quaternion.Euler(0, 0, Mathf.Atan2(AimDirection.y, AimDirection.x) * Mathf.Rad2Deg);
-            if (Application.isFocused && mouse.leftButton.isPressed && Time.time >= nextShot && !Reloading && Ammo > 0) Shoot();
-        }
+        TickActions();
+        NearbyWeapon = FindNearbyWeapon();
         ShotKick = Mathf.MoveTowards(ShotKick, 0, Time.deltaTime * 2);
-        torso.transform.localPosition = Vector3.left * ShotKick;
-        flash.gameObject.SetActive(Time.time < flashUntil);
     }
 
+    public void SetMoveInput(Vector2 direction) => input = Vector2.ClampMagnitude(direction, 1);
+    public void SetAimDirection(Vector2 direction) { if (direction.sqrMagnitude > 0.01f) AimDirection = direction.normalized; }
     void FixedUpdate()
     {
-        // Actual displacement prevents walking in place against a wall.
         TravelVelocity = (body.position - previousPosition) / Time.fixedDeltaTime;
         previousPosition = body.position;
         body.linearVelocity = input * moveSpeed;
     }
-
     void LateUpdate()
     {
-        float speed = TravelVelocity.magnitude;
-        if (speed > 0.1f)
-        {
-            legs.rotation = Quaternion.Euler(0, 0, Mathf.Atan2(TravelVelocity.y, TravelVelocity.x) * Mathf.Rad2Deg);
-            phase += speed * Time.deltaTime / Mathf.Max(0.1f, strideLength) * Mathf.PI * 2;
-        }
-        float step = speed > 0.1f ? Mathf.Sin(phase) * 0.23f : 0;
-        leftFoot.localPosition = new Vector3(step, 0.18f, 0);
-        rightFoot.localPosition = new Vector3(-step, -0.18f, 0);
-        leftFoot.localRotation = Quaternion.Euler(0, 0, 90 + step * 25);
-        rightFoot.localRotation = Quaternion.Euler(0, 0, 90 - step * 25);
+        float progress = Attacking ? Mathf.Clamp01((Time.time - attackStarted) / Weapon.Interval) : -1;
+        BodyVisual?.Pose(Time.deltaTime, TravelVelocity, Attacking ? attackDirection : AimDirection, EquippedWeapon, ShotKick, progress, Time.time < flashUntil, strideLength);
     }
-
+    void Equip(CharacterWeapon kind, int rounds)
+    {
+        EquippedWeapon = kind;
+        Ammo = Mathf.Clamp(rounds, 0, Weapon.Capacity);
+        reloadUntil = 0; attackStarted = -1; flashUntil = 0; ShotKick = 0;
+        BodyVisual?.Pose(0, TravelVelocity, AimDirection, kind, 0, -1, false, strideLength);
+    }
+    public bool TryReload()
+    {
+        if (Weapon.IsMelee || Reloading || Ammo >= Weapon.Capacity || Attacking) return false;
+        reloadUntil = Time.time + Weapon.Reload; return true;
+    }
+    public void TickActions()
+    {
+        if (Reloading && Time.time >= reloadUntil) { Ammo = Weapon.Capacity; reloadUntil = 0; }
+        if (!Attacking) return;
+        float progress = (Time.time - attackStarted) / Weapon.Interval;
+        if (progress >= 0.28f && progress <= 0.72f) MeleeContact();
+        if (progress >= 1) { attackStarted = -1; struck.Clear(); }
+    }
+    public bool TryAttack(bool pressed = true, bool held = false)
+    {
+        if ((!pressed && !(held && EquippedWeapon == CharacterWeapon.Automatic)) || Time.time < nextActionTime || Reloading || Attacking) return false;
+        if (!Weapon.IsMelee && Ammo <= 0) return false;
+        nextActionTime = Time.time + Weapon.Interval;
+        if (Weapon.IsMelee)
+        {
+            attackStarted = Time.time; attackDirection = AimDirection; struck.Clear(); LastPelletCount = 0;
+        }
+        else Shoot();
+        return true;
+    }
+    public WorldWeapon FindNearbyWeapon()
+    {
+        WorldWeapon nearest = null;
+        float distance = pickupRadius;
+        foreach (var pickup in WorldWeapon.Available)
+        {
+            if (pickup == null || pickup.Collected || !pickup.isActiveAndEnabled) continue;
+            Vector2 delta = (Vector2)pickup.transform.position - body.position;
+            float d = delta.magnitude;
+            if (d > distance || Cast(body.position, delta.normalized, d, out _) != null) continue;
+            distance = d; nearest = pickup;
+        }
+        return nearest;
+    }
+    public bool TryPickupNearest()
+    {
+        if (Attacking) return false;
+        var pickup = FindNearbyWeapon();
+        if (pickup == null) return false;
+        pickup.InitializeVisual();
+        var kind = pickup.kind; int rounds = pickup.ammo;
+        if (!pickup.Take()) return false;
+        if (EquippedWeapon != CharacterWeapon.Unarmed)
+            WorldWeapon.Spawn(characterSheet, EquippedWeapon, body.position, Ammo);
+        Equip(kind, rounds); NearbyWeapon = null; return true;
+    }
+    public bool DropWeapon()
+    {
+        if (EquippedWeapon == CharacterWeapon.Unarmed || Attacking) return false;
+        Cast(body.position, AimDirection, 0.65f, out float distance);
+        Vector2 point = body.position + AimDirection * Mathf.Max(0, distance - 0.2f);
+        WorldWeapon.Spawn(characterSheet, EquippedWeapon, point, Ammo);
+        Equip(CharacterWeapon.Unarmed, 0); return true;
+    }
+    ContactFilter2D Filter()
+    { var filter = new ContactFilter2D(); filter.SetLayerMask(shotMask); filter.useTriggers = false; return filter; }
+    Collider2D Cast(Vector2 origin, Vector2 direction, float range, out float distance)
+    {
+        int count = Physics2D.Raycast(origin, direction, Filter(), hits, range);
+        distance = range; Collider2D closest = null;
+        for (int i = 0; i < count; i++)
+            if (!hits[i].collider.transform.IsChildOf(transform) && hits[i].distance < distance)
+            { distance = hits[i].distance; closest = hits[i].collider; }
+        return closest;
+    }
+    void MeleeContact()
+    {
+        int count = Physics2D.OverlapCircle(body.position, Weapon.Reach, Filter(), overlaps);
+        for (int i = 0; i < count; i++)
+        {
+            var other = overlaps[i];
+            if (other.transform.IsChildOf(transform)) continue;
+            var test = other.GetComponentInParent<CharacterTestTarget>();
+            var enemy = other.GetComponentInParent<EnemyHealth>();
+            GameObject victim = test != null ? test.gameObject : enemy != null ? enemy.gameObject : null;
+            if (victim == null || struck.Contains(victim)) continue;
+            Vector2 delta = (Vector2)other.bounds.center - body.position;
+            if (Vector2.Angle(attackDirection, delta) > 65) continue;
+            Collider2D obstruction = Cast(body.position, delta.normalized, delta.magnitude + 0.01f, out _);
+            if (obstruction != null && obstruction != other && !obstruction.transform.IsChildOf(victim.transform)) continue;
+            struck.Add(victim);
+            test?.Hit(); enemy?.TakeDamage(Weapon.Damage);
+        }
+    }
     void Shoot()
     {
-        nextShot = Time.time + shotInterval;
-        Ammo--;
-        ShotKick = 0.095f;
-        flashUntil = Time.time + 0.035f;
-        Vector2 origin = transform.position;
-        // Cast from the body, so a barrel clipping a wall cannot shoot through it.
-        var filter = new ContactFilter2D();
-        filter.SetLayerMask(shotMask);
-        filter.useTriggers = false;
-        int count = Physics2D.Raycast(origin, AimDirection, filter, hits, 35);
-        float distance = 35;
-        Collider2D closest = null;
-        for (int i = 0; i < count; i++)
-            if (hits[i].collider.attachedRigidbody != body && hits[i].distance < distance)
-            { distance = hits[i].distance; closest = hits[i].collider; }
-        if (closest != null)
+        Ammo--; LastPelletCount = Weapon.Pellets;
+        ShotKick = EquippedWeapon == CharacterWeapon.Shotgun ? 0.14f : 0.075f;
+        flashUntil = Time.time + 0.04f;
+        for (int i = 0; i < Weapon.Pellets; i++)
         {
-            closest.GetComponentInParent<CharacterTestTarget>()?.Hit();
-            closest.GetComponentInParent<EnemyHealth>()?.TakeDamage(1);
+            float offset = Weapon.Pellets == 1 ? Random.Range(-Weapon.Spread, Weapon.Spread) * 0.5f : Mathf.Lerp(-Weapon.Spread / 2, Weapon.Spread / 2, i / (float)(Weapon.Pellets - 1));
+            Vector2 direction = Quaternion.Euler(0, 0, offset) * AimDirection;
+            Collider2D hit = Cast(body.position, direction, Weapon.Reach, out float distance);
+            if (hit != null)
+            {
+                hit.GetComponentInParent<CharacterTestTarget>()?.Hit();
+                hit.GetComponentInParent<EnemyHealth>()?.TakeDamage(Weapon.Damage);
+            }
+            var trace = new GameObject("Shot tracer").AddComponent<LineRenderer>();
+            trace.sharedMaterial = atlas.TraceMaterial; trace.sortingOrder = 8;
+            trace.startWidth = 0.035f; trace.endWidth = 0.01f;
+            trace.startColor = new Color(1, 0.9f, 0.55f); trace.endColor = new Color(1, 0.65f, 0.3f, 0);
+            trace.positionCount = 2;
+            trace.SetPosition(0, body.position + direction * Mathf.Min(0.65f, distance));
+            trace.SetPosition(1, body.position + direction * distance);
+            Destroy(trace.gameObject, 0.055f);
         }
-        var trace = new GameObject("Shot tracer").AddComponent<LineRenderer>();
-        trace.sharedMaterial = spriteMaterial;
-        trace.sortingOrder = 8;
-        trace.startWidth = 0.045f;
-        trace.endWidth = 0.015f;
-        trace.startColor = new Color(1, 0.9f, 0.55f);
-        trace.endColor = new Color(1, 0.65f, 0.3f, 0);
-        trace.positionCount = 2;
-        trace.SetPosition(0, origin + AimDirection * Mathf.Min(0.7f, distance));
-        trace.SetPosition(1, origin + AimDirection * distance);
-        Destroy(trace.gameObject, 0.055f);
     }
-
     void OnApplicationFocus(bool focused) { if (!focused) { input = Vector2.zero; if (body != null) body.linearVelocity = Vector2.zero; } }
     void OnDisable() { if (body != null) body.linearVelocity = Vector2.zero; }
-    void OnDestroy() { foreach (var sprite in sprites) Destroy(sprite); if (spriteMaterial != null) Destroy(spriteMaterial); }
+    void OnDestroy() => atlas?.Dispose();
 }

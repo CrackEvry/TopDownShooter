@@ -17,9 +17,20 @@ public class CharacterTestCamera : MonoBehaviour
     void OnGUI()
     {
         if (player == null) return;
-        GUI.Box(new Rect(18, 18, 370, 88), "CHARACTER LAB  /  JESTAN ASSETS");
-        GUI.Label(new Rect(30, 46, 350, 25), "WASD  bewegen    •    Muis  richten / schieten");
-        GUI.Label(new Rect(30, 70, 350, 25), player.Reloading ? "HERLADEN…" : $"PISTOOL   {player.Ammo:00} / {player.magazineSize}       R  herladen");
+        GUI.Box(new Rect(18, 18, 465, 112), "TRAINING");
+        GUI.Label(new Rect(30, 43, 440, 25), "WASD  bewegen     Muis  richten     Linksklik  aanvallen");
+        GUI.Label(new Rect(30, 66, 440, 25), "E / Rechtsklik  oppakken     Q  neerleggen     R  herladen");
+        string status = player.Weapon.IsMelee ? player.Weapon.Name : $"{player.Weapon.Name}   {player.Ammo:00} / {player.magazineSize}";
+        GUI.Label(new Rect(30, 91, 440, 25), player.Reloading ? status + "    HERLADEN…" : status);
+        if (player.NearbyWeapon != null)
+            GUI.Box(new Rect(Screen.width / 2 - 165, Screen.height - 70, 330, 32), "E  OPPAKKEN  /  " + CharacterWeaponSettings.For(player.NearbyWeapon.kind).Name);
+        var camera = GetComponent<Camera>();
+        foreach (var pickup in WorldWeapon.Available)
+        {
+            if (pickup == null || pickup.Collected) continue;
+            Vector3 label = camera.WorldToScreenPoint(pickup.transform.position + Vector3.down * 0.55f);
+            if (label.z > 0) GUI.Label(new Rect(label.x - 60, Screen.height - label.y, 140, 24), CharacterWeaponSettings.For(pickup.kind).Name);
+        }
         if (Mouse.current == null) return;
         Vector2 p = Mouse.current.position.ReadValue();
         p.y = Screen.height - p.y;

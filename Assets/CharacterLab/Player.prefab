@@ -110,11 +110,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ActionPlayer
   characterSheet: {fileID: 2800000, guid: 27a4b9eead95796418b7d5c86225297b, type: 3}
+  startingWeapon: 0
   moveSpeed: 7
-  shotInterval: 0.12
-  strideLength: 1.15
+  strideLength: 5.6
   shotMask:
     serializedVersion: 2
     m_Bits: 4294967295
-  magazineSize: 12
-  reloadSeconds: 0.75
+  pickupRadius: 1.35
