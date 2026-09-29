@@ -72,6 +72,13 @@ public static class CharacterLabValidation
         count = 0;
         player = UnityEngine.Object.FindFirstObjectByType<ActionPlayer>();
         Require(player != null && player.BodyVisual != null, "Player visual assembly");
+        var music = UnityEngine.Object.FindFirstObjectByType<GoofySoundtrack>();
+        Require(music != null && music.Source.clip != null && music.Source.isPlaying && music.Source.loop, "Original soundtrack loads and plays on loop");
+        Require(music.Source.clip.channels == 2 && Mathf.Abs(music.Source.clip.length - 53.3333f) < 0.02f, "Full stereo 32-bar soundtrack is imported");
+        Require(GoofySoundtrack.EnsurePlaying() == music && UnityEngine.Object.FindObjectsByType<GoofySoundtrack>(FindObjectsSortMode.None).Length == 1, "Repeated player setup never doubles music");
+        music.SetMuted(true); yield return 0.4f;
+        Require(music.Source.volume < 0.001f && music.Source.isPlaying, "Music mutes while preserving playback position");
+        music.SetMuted(false);
         player.enabled = false;
         body = player.GetComponent<Rigidbody2D>();
         target = UnityEngine.Object.FindFirstObjectByType<CharacterTestTarget>();
@@ -86,15 +93,25 @@ public static class CharacterLabValidation
             Require(pickup.transform.position == position && (pickup.Visual.localPosition - visualStart).sqrMagnitude > 0.000001f && pickup.Halo.color.a > 0 && pickup.Halo.color.a < 0.5f, "Stationary interaction point, floating sprite, subtle glow: " + pickup.kind);
         }
         Warp(Vector2.zero); player.SetMoveInput(Vector2.one); Motor();
+        Require(body.linearVelocity.magnitude > 0 && body.linearVelocity.magnitude < player.moveSpeed, "Movement accelerates smoothly rather than jumping to full speed");
+        for (int i = 0; i < 4; i++) Motor();
         Require(Mathf.Abs(body.linearVelocity.magnitude - player.moveSpeed) < 0.001f, "Diagonal movement is normalized");
-        player.SetMoveInput(Vector2.zero); Motor();
-        Require(body.linearVelocity == Vector2.zero, "Immediate stop");
+        player.SetMoveInput(Vector2.zero); for (int i = 0; i < 3; i++) Motor();
+        Require(body.linearVelocity == Vector2.zero, "Firm braking stops within three physics ticks");
+        player.SetMoveInput(Vector2.right);
+        Require(player.TryDash() && player.Dashing && !player.TryDash(), "Dash starts once and respects cooldown");
+        Motor(); Require(body.linearVelocity.magnitude > player.moveSpeed * 2, "Dash gives a real speed burst");
+        Warp(new Vector2(-5, 1));
+        for (int i = 0; i < 10; i++) { Motor(); Physics2D.Simulate(0.02f); }
+        Require(body.position.x < -4.5f, "Swept dash cannot tunnel through cover");
+        yield return 0.2f;
+        Require(!player.Dashing && player.DashReady < 1, "Dash ends before cooldown recovers");
         Warp(new Vector2(-5, 1)); player.SetMoveInput(Vector2.right);
         for (int i = 0; i < 30; i++) { Motor(); Physics2D.Simulate(0.02f); }
         Require(body.position.x < -4.5f, "Wall collision");
         player.SetMoveInput(Vector2.zero); Motor(); Warp(Vector2.zero);
         var left = player.BodyVisual.LeftHip.localPosition; var right = player.BodyVisual.RightHip.localPosition;
-        bool hipsFixed = true, kneesConnected = true;
+        bool hipsFixed = true, kneesConnected = true, legsStraight = true;
         for (int i = 0; i < 180; i++)
         {
             var direction = Quaternion.Euler(0, 0, i * 2) * Vector2.right;
@@ -104,13 +121,39 @@ public static class CharacterLabValidation
             {
                 var thigh = hip.GetChild(0); var shin = thigh.GetChild(0);
                 kneesConnected &= Vector3.Distance(thigh.TransformPoint(Vector3.down * (7f / 24)), shin.position) < 0.0001f;
+                legsStraight &= Quaternion.Angle(thigh.localRotation, Quaternion.identity) < 0.001f && Quaternion.Angle(shin.localRotation, Quaternion.identity) < 0.001f && Mathf.Abs(shin.localPosition.x) < 0.001f;
             }
         }
         Require(hipsFixed && kneesConnected, "Fixed hips and connected knees through 180 changing movement directions");
+        Require(legsStraight, "No sideways leg swing at any stride phase or travel direction");
+        foreach (var kind in new[] { CharacterWeapon.Pistol, CharacterWeapon.Shotgun, CharacterWeapon.Automatic })
+            for (int a = 0; a < 8; a++)
+            {
+                Vector2 direction = Quaternion.Euler(0, 0, a * 45) * Vector2.right;
+                player.BodyVisual.Pose(0, Vector2.zero, direction, kind, 0.075f, -1, true, player.strideLength);
+                var muzzle = player.BodyVisual.Muzzle;
+                var path = CombatBallistics.Resolve(player.transform, body.position, muzzle.position, muzzle.right, 0.3f, ~0);
+                Require(!path.BarrelBlocked && Vector2.Distance(path.Origin, muzzle.position) < 0.0001f && Vector2.Dot(muzzle.right, direction) > 0.999f, "Muzzle origin and direction: " + kind + " at " + a * 45);
+            }
+        var thinWall = new GameObject("Validation thin wall"); thinWall.transform.position = new Vector3(0.5f, 0, 0);
+        thinWall.AddComponent<BoxCollider2D>().size = new Vector2(0.06f, 1.5f); Physics2D.SyncTransforms();
+        var blocked = CombatBallistics.Resolve(player.transform, Vector2.zero, new Vector2(1.2f, -0.25f), Vector2.right, 10, ~0);
+        Require(blocked.BarrelBlocked && blocked.Hit == thinWall.GetComponent<Collider2D>(), "Barrel clipping a thin wall cannot fire from the other side");
+        UnityEngine.Object.DestroyImmediate(thinWall); Physics2D.SyncTransforms();
         Pickup(CharacterWeapon.Pistol); Warp(Vector2.zero); PlaceTarget(new Vector2(3, 0)); player.SetAimDirection(Vector2.right);
+        int soundBefore = player.GetComponent<ShotFeedback>().PlayedShots;
+        int shakeBefore = Camera.main.GetComponent<CharacterTestCamera>().ShakeCount;
         int initial = target.HitCount;
         Require(player.TryAttack() && player.Ammo == 11 && target.HitCount == initial + 1, "Pistol shot and ammo");
+        Require(Vector2.Distance(player.LastShot.Origin, player.BodyVisual.Muzzle.position) < 0.0001f, "Actual fired tracer starts at the visible barrel");
+        Require(player.GetComponent<ShotFeedback>().PlayedShots == soundBefore + 1 && Camera.main.GetComponent<CharacterTestCamera>().ShakeCount == shakeBefore + 1, "One retro sound and camera impulse per shot");
         Require(!player.TryAttack(), "Fire cooldown");
+        Require(player.GetComponent<ShotFeedback>().PlayedShots == soundBefore + 1, "Rejected shot does not play a sound");
+        yield return 0.07f;
+        player.BufferAttack();
+        yield return 0.08f; player.TickBufferedAttack();
+        Require(player.Ammo == 10, "A slightly early click fires once when cooldown ends");
+        player.TickBufferedAttack(); Require(player.Ammo == 10, "Buffered click is consumed exactly once");
         yield return 0.2f;
         Require(!player.TryAttack(false, true), "Pistol needs a new click");
         Require(player.TryReload() && !player.TryAttack(), "Reload blocks firing");
@@ -121,6 +164,9 @@ public static class CharacterLabValidation
         yield return 0.2f;
         Pickup(CharacterWeapon.Shotgun); Warp(Vector2.zero); player.SetAimDirection(Vector2.right);
         Require(player.TryAttack() && player.Ammo == 5 && player.LastPelletCount == 7, "Shotgun: seven pellets, one shell");
+        player.SetAimPoint(new Vector2(7, 4));
+        player.BodyVisual.Pose(0, Vector2.zero, player.AimDirection, player.EquippedWeapon, player.ShotKick, -1, false, player.strideLength);
+        Require(Vector2.Angle(player.BodyVisual.Muzzle.right, new Vector2(7, 4) - (Vector2)player.BodyVisual.Muzzle.position) < 0.1f, "Offset shotgun barrel converges on the cursor");
         yield return 0.7f;
         Pickup(CharacterWeapon.Automatic); Warp(Vector2.zero);
         Require(player.TryAttack(false, true) && player.Ammo == 29, "Automatic fires while held");
@@ -178,6 +224,18 @@ public static class CharacterLabValidation
         CaptureStrip("weapon-poses.png", 5, 256, i => player.BodyVisual.Pose(1, Vector2.zero, Vector2.down, (CharacterWeapon)i, 0, -1, false, player.strideLength), camera);
         CaptureStrip("walk-cycle.png", 8, 192, i => player.BodyVisual.Pose(player.strideLength / 7 / 8, Vector2.down * 7, Vector2.down, CharacterWeapon.Automatic, 0, -1, false, player.strideLength), camera);
         CaptureStrip("walk-smooth.png", 32, 192, i => player.BodyVisual.Pose(player.strideLength / 7 / 32, Vector2.down * 7, Vector2.down, CharacterWeapon.Automatic, 0, -1, false, player.strideLength), camera);
+        camera.transform.position = new Vector3(0.5f, 0, -10); camera.orthographicSize = 1.5f;
+        CaptureStrip("muzzle-alignment.png", 3, 256, i => {
+            var kind = (CharacterWeapon)(i + 2);
+            player.BodyVisual.Pose(0, Vector2.zero, Vector2.right, kind, 0, -1, true, player.strideLength);
+            var muzzle = player.BodyVisual.Muzzle;
+            var path = CombatBallistics.Resolve(player.transform, player.transform.position, muzzle.position, muzzle.right, 3, ~0);
+            var material = new Material(Shader.Find("Sprites/Default"));
+            CombatBallistics.DrawTracer(path, material, Color.yellow);
+        }, camera, () => {
+            foreach (var line in UnityEngine.Object.FindObjectsByType<LineRenderer>(FindObjectsSortMode.None)) { UnityEngine.Object.DestroyImmediate(line.sharedMaterial); UnityEngine.Object.DestroyImmediate(line.gameObject); }
+        });
+        camera.transform.position = new Vector3(0, 0, -10); camera.orthographicSize = 1.2f;
         CaptureStrip("knife-swing.png", 8, 192, i => player.BodyVisual.Pose(0.05f, Vector2.zero, Vector2.down, CharacterWeapon.Knife, 0, i / 8f, false, player.strideLength), camera);
         player.BodyVisual.Root.gameObject.SetActive(false);
         for (int i = 1; i <= 4; i++) WorldWeapon.Spawn(player.characterSheet, (CharacterWeapon)i, new Vector2(-2.4f + (i - 1) * 1.6f, 0), CharacterWeaponSettings.For((CharacterWeapon)i).Capacity);
@@ -194,7 +252,7 @@ public static class CharacterLabValidation
         }, camera);
         Debug.Log("CHARACTER_LAB_VISUALS_OK: " + output);
     }
-    static void CaptureStrip(string file, int frames, int size, Action<int> pose, Camera camera)
+    static void CaptureStrip(string file, int frames, int size, Action<int> pose, Camera camera, Action cleanup = null)
     {
         var strip = new Texture2D(size * frames, size, TextureFormat.RGBA32, false);
         var render = new RenderTexture(size, size, 24);
@@ -208,6 +266,7 @@ public static class CharacterLabValidation
             frame.ReadPixels(new Rect(0, 0, size, size), 0, 0); frame.Apply();
             RenderTexture.active = previous;
             strip.SetPixels(i * size, 0, size, size, frame.GetPixels());
+            cleanup?.Invoke();
         }
         strip.Apply(); File.WriteAllBytes(Path.Combine(output, file), strip.EncodeToPNG());
         UnityEngine.Object.Destroy(frame); UnityEngine.Object.Destroy(strip); render.Release(); UnityEngine.Object.Destroy(render);

@@ -112,6 +112,7 @@ public static class CharacterLabBuilder
         player.startingWeapon = CharacterWeapon.Unarmed;
         // The reference GIF has eight frames at 100 ms: one cycle per 0.8 s at speed 7.
         player.strideLength = 5.6f;
+        ConfigureFeedback(player.gameObject, false);
         PrefabUtility.SaveAsPrefabAsset(player.gameObject, Folder + "/Player.prefab");
         string weaponFolder = Folder + "/Weapons";
         Directory.CreateDirectory(weaponFolder); AssetDatabase.Refresh();
@@ -127,5 +128,14 @@ public static class CharacterLabBuilder
             pickup.characterSheet = sheet; pickup.kind = kind; pickup.ammo = CharacterWeaponSettings.For(kind).Capacity;
             PrefabUtility.SaveAsPrefabAsset(obj, weaponFolder + "/" + kind + ".prefab");
         }
+    }
+
+    public static void ConfigureFeedback(GameObject actor, bool spatial)
+    {
+        var feedback = actor.GetComponent<ShotFeedback>() ?? actor.AddComponent<ShotFeedback>();
+        feedback.pistol = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/Retro/Pistol.wav");
+        feedback.shotgun = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/Retro/Shotgun.wav");
+        feedback.automatic = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/Retro/Automatic.wav");
+        feedback.spatial = spatial; feedback.volume = spatial ? 0.25f : 0.38f;
     }
 }

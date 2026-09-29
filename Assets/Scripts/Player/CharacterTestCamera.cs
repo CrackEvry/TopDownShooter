@@ -4,21 +4,46 @@ using UnityEngine.InputSystem;
 public class CharacterTestCamera : MonoBehaviour
 {
     public ActionPlayer player;
+    [Range(0, 1)] public float shakeStrength = 0.07f;
+    public float shakeDuration = 0.12f;
+    public Vector2 CurrentShakeOffset { get; private set; }
+    public int ShakeCount { get; private set; }
+    [Range(0, 3)] public float feedbackIntensity = 1.8f;
+    float shakeRemaining, shakeAmplitude, shakePhase, impulseDuration;
     Vector3 velocity;
     Vector3 follow;
     void Start() { follow = player.transform.position; }
+    void OnEnable() => CombatSignals.Fired += OnShot;
+    void OnDisable() { CombatSignals.Fired -= OnShot; CurrentShakeOffset = Vector2.zero; }
+    void OnShot(Gunshot shot)
+    {
+        if (player == null || shot.Shooter != player.transform) return;
+        Impulse(shakeStrength * feedbackIntensity * (shot.Weapon == CharacterWeapon.Shotgun ? 1.5f : 1), shakeDuration);
+        ShakeCount++;
+    }
+    public void Impulse(float amplitude, float duration)
+    {
+        shakeRemaining = Mathf.Max(shakeRemaining, duration);
+        impulseDuration = shakeRemaining;
+        shakeAmplitude = Mathf.Min(0.3f, Mathf.Max(shakeAmplitude * 0.7f, amplitude));
+        shakePhase += 1.7f;
+    }
+    public Vector2 ScreenToAimWorld(Vector2 screen) => (Vector2)GetComponent<Camera>().ScreenToWorldPoint(screen) - CurrentShakeOffset;
     void LateUpdate()
     {
         if (player == null) return;
-        Vector3 target = player.transform.position + (Vector3)player.AimDirection * 1.1f;
-        follow = Vector3.SmoothDamp(follow, target, ref velocity, 0.12f);
-        transform.position = follow - (Vector3)player.AimDirection * player.ShotKick * 0.35f + Vector3.back * 10;
+        Vector3 target = player.transform.position + (Vector3)player.AimDirection * 1.1f + (Vector3)Vector2.ClampMagnitude(player.TravelVelocity * 0.035f, 0.4f);
+        follow = Vector3.SmoothDamp(follow, target, ref velocity, 0.085f);
+        shakeRemaining = Mathf.Max(0, shakeRemaining - Time.deltaTime);
+        float envelope = impulseDuration > 0 ? Mathf.Clamp01(shakeRemaining / impulseDuration) : 0;
+        CurrentShakeOffset = new Vector2(Mathf.Sin(Time.time * 103 + shakePhase), Mathf.Sin(Time.time * 137 + shakePhase * 2)) * (shakeAmplitude * envelope * envelope);
+        transform.position = follow + (Vector3)CurrentShakeOffset + Vector3.back * 10;
     }
     void OnGUI()
     {
         if (player == null) return;
         GUI.Box(new Rect(18, 18, 465, 112), "TRAINING");
-        GUI.Label(new Rect(30, 43, 440, 25), "WASD  bewegen     Muis  richten     Linksklik  aanvallen");
+        GUI.Label(new Rect(30, 43, 440, 25), "WASD bewegen   Muis richten   Klik aanval   Shift/Spatie dash");
         GUI.Label(new Rect(30, 66, 440, 25), "E / Rechtsklik  oppakken     Q  neerleggen     R  herladen");
         string status = player.Weapon.IsMelee ? player.Weapon.Name : $"{player.Weapon.Name}   {player.Ammo:00} / {player.magazineSize}";
         GUI.Label(new Rect(30, 91, 440, 25), player.Reloading ? status + "    HERLADEN…" : status);

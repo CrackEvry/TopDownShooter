@@ -1,10 +1,23 @@
 using UnityEngine;
 
-// Two-bone legs: hip roots never translate during the stride, and shins are children
-// of their knees. Both sprite sections stay connected even during quick turns.
+// Straight top-down strides. Legs telescope along the travel axis; no sideways IK swing.
 public sealed class CharacterBodyVisual
 {
-    public readonly Transform Root, Legs, Shoulders, LeftHip, RightHip;
+    SpriteRenderer corpse;
+    public bool IsCorpse => corpse != null && corpse.enabled;
+    public void ShowCorpse(Vector2 direction)
+    {
+        Legs.gameObject.SetActive(false); Shoulders.gameObject.SetActive(false);
+        if (corpse == null) corpse = atlas.Part("Corpse - asset pack death pose", Root, atlas.Corpse, -1);
+        corpse.enabled = true;
+        corpse.transform.localRotation = Quaternion.Euler(0, 0, Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90);
+    }
+    public void RestoreAlive()
+    {
+        if (corpse != null) corpse.enabled = false;
+        Legs.gameObject.SetActive(true); Shoulders.gameObject.SetActive(true);
+    }
+    public readonly Transform Root, Legs, Shoulders, LeftHip, RightHip, Muzzle;
     public readonly SpriteRenderer Torso, HeldWeapon;
     readonly Transform leftThigh, rightThigh, leftShin, rightShin, weaponGrip;
     readonly SpriteRenderer flash;
@@ -31,7 +44,8 @@ public sealed class CharacterBodyVisual
         Torso.transform.localRotation = Quaternion.Euler(0, 0, 90);
         weaponGrip = Child("Hand grip", Shoulders);
         HeldWeapon = atlas.Part("Held weapon", weaponGrip, null, 2);
-        flash = atlas.Part("Muzzle flash", Shoulders, atlas.Flash, 5);
+        Muzzle = Child("Muzzle - barrel tip", HeldWeapon.transform);
+        flash = atlas.Part("Muzzle flash", Muzzle, atlas.Flash, 5);
         flash.transform.localRotation = Quaternion.Euler(0, 0, -90);
         flash.transform.localScale = Vector3.one * 0.55f;
         Pose(0, Vector2.zero, Vector2.right, CharacterWeapon.Unarmed, 0, -1, false, 5.6f);
@@ -51,16 +65,15 @@ public sealed class CharacterBodyVisual
             phase += Mathf.Min(speed, 10) * dt / Mathf.Max(0.5f, strideLength) * Mathf.PI * 2;
         }
         Legs.rotation = Quaternion.Euler(0, 0, travelAngle);
-        SolveLeg(leftThigh, leftShin, -1, phase, walkBlend);
-        SolveLeg(rightThigh, rightShin, 1, phase + Mathf.PI, walkBlend);
+        PoseStraightLeg(leftThigh, leftShin, phase, walkBlend);
+        PoseStraightLeg(rightThigh, rightShin, phase + Mathf.PI, walkBlend);
         // At rest the supplied idle pose is the complete silhouette. Blend the
         // stepping limbs beneath it instead of leaving a bent boot above the head.
         foreach (var renderer in legRenderers) renderer.color = new Color(1, 1, 1, walkBlend);
         float aimAngle = Mathf.Atan2(aim.y, aim.x) * Mathf.Rad2Deg;
-        float sway = Mathf.Sin(phase) * walkBlend;
-        Shoulders.rotation = Quaternion.Euler(0, 0, aimAngle + sway * 0.9f);
+        Shoulders.rotation = Quaternion.Euler(0, 0, aimAngle);
         // Keep the head on one anchor across every pose and every weapon.
-        Shoulders.localPosition = new Vector3(0, sway * 0.008f, 0) - (Vector3)aim * recoil;
+        Shoulders.localPosition = -(Vector3)aim * recoil;
         bool striking = attackProgress >= 0 && attackProgress < 1;
         Torso.sprite = weapon == CharacterWeapon.Unarmed ? atlas.Idle : weapon == CharacterWeapon.Knife ? atlas.Strike[0] :
             weapon == CharacterWeapon.Pistol ? atlas.PistolPose : atlas.LongGunPose;
@@ -73,6 +86,8 @@ public sealed class CharacterBodyVisual
         HeldWeapon.sprite = atlas.Weapon(weapon);
         HeldWeapon.enabled = weapon != CharacterWeapon.Unarmed;
         HeldWeapon.transform.localRotation = Quaternion.Euler(0, 0, CharacterSpriteAtlas.WeaponRotation(weapon));
+        Muzzle.localPosition = CharacterSpriteAtlas.BarrelTip(weapon);
+        Muzzle.localRotation = Quaternion.Euler(0, 0, -CharacterSpriteAtlas.WeaponRotation(weapon));
         weaponGrip.localPosition = weapon == CharacterWeapon.Knife ? KnifeHand(0) :
             weapon == CharacterWeapon.Pistol ? new Vector3(0.52f, 0) : new Vector3(0.34f, -0.27f);
         weaponGrip.localRotation = Quaternion.identity;
@@ -87,7 +102,7 @@ public sealed class CharacterBodyVisual
             weaponGrip.localRotation = Quaternion.Euler(0, 0, angle);
         }
         flash.enabled = muzzleFlash && !CharacterWeaponSettings.For(weapon).IsMelee;
-        flash.transform.localPosition = new Vector3(weapon == CharacterWeapon.Pistol ? 0.8f : 1.22f, weapon == CharacterWeapon.Pistol ? 0 : -0.27f, 0);
+        flash.transform.localPosition = Vector3.zero;
     }
 
     static Vector3 KnifeHand(int frame)
@@ -101,19 +116,14 @@ public sealed class CharacterBodyVisual
         }
     }
 
-    static void SolveLeg(Transform thigh, Transform shin, float side, float phase, float blend)
+    static void PoseStraightLeg(Transform thigh, Transform shin, float phase, float blend)
     {
-        Vector2 idle = new Vector2(side * 0.025f, -0.17f);
-        Vector2 stride = new Vector2(side * 0.065f, Mathf.Sin(phase) * 0.44f - 0.025f);
-        Vector2 foot = Vector2.Lerp(idle, stride, blend);
-        float distance = Mathf.Clamp(foot.magnitude, Mathf.Abs(UpperLength - LowerLength) + 0.01f, UpperLength + LowerLength - 0.01f);
-        float direction = Mathf.Atan2(foot.y, foot.x);
-        float bend = Mathf.Acos(Mathf.Clamp((UpperLength * UpperLength + distance * distance - LowerLength * LowerLength) / (2 * UpperLength * distance), -1, 1));
-        float upperAngle = direction + side * bend;
-        Vector2 knee = new Vector2(Mathf.Cos(upperAngle), Mathf.Sin(upperAngle)) * UpperLength;
-        Vector2 lower = foot.normalized * distance - knee;
-        float lowerAngle = Mathf.Atan2(lower.y, lower.x);
-        thigh.localRotation = Quaternion.Euler(0, 0, upperAngle * Mathf.Rad2Deg + 90);
-        shin.localRotation = Quaternion.Euler(0, 0, (lowerAngle - upperAngle) * Mathf.Rad2Deg);
+        // Signed foreshortening sends the boot forward/back on the same line.
+        // The zero-length crossing is hidden under the torso; hips never slide.
+        float extension = Mathf.Lerp(0.25f, Mathf.Sin(phase) * 0.92f, blend);
+        thigh.localRotation = shin.localRotation = Quaternion.identity;
+        thigh.localScale = new Vector3(1, extension, 1);
+        shin.localPosition = Vector3.down * UpperLength;
+        shin.localScale = Vector3.one;
     }
 }

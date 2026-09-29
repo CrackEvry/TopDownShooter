@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!1 &8700250177259621602
+--- !u!1 &4971900803104688326
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -8,42 +8,42 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 2320919255721964758}
-  - component: {fileID: 4503116858827829789}
-  - component: {fileID: 4379328866707693164}
-  - component: {fileID: 201771925237026209}
-  - component: {fileID: 1944192001303066554}
-  - component: {fileID: 5038357920232593070}
+  - component: {fileID: 3295602901096709831}
+  - component: {fileID: 662171641040844417}
+  - component: {fileID: 3155888807991906334}
+  - component: {fileID: 8884593885696945479}
+  - component: {fileID: 8569276949955853528}
+  - component: {fileID: 8107418500738217385}
   m_Layer: 0
-  m_Name: Player
+  m_Name: EnemyNpc
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &2320919255721964758
+--- !u!4 &3295602901096709831
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8700250177259621602}
+  m_GameObject: {fileID: 4971900803104688326}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -8, y: -0.2, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!50 &4503116858827829789
+--- !u!50 &662171641040844417
 Rigidbody2D:
   serializedVersion: 5
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8700250177259621602}
+  m_GameObject: {fileID: 4971900803104688326}
   m_BodyType: 0
   m_Simulated: 1
   m_UseFullKinematicContacts: 0
@@ -63,13 +63,13 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 0
---- !u!58 &4379328866707693164
+--- !u!58 &3155888807991906334
 CircleCollider2D:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8700250177259621602}
+  m_GameObject: {fileID: 4971900803104688326}
   m_Enabled: 1
   serializedVersion: 3
   m_Density: 1
@@ -98,34 +98,42 @@ CircleCollider2D:
   m_CompositeOperation: 0
   m_CompositeOrder: 0
   m_Offset: {x: 0, y: 0}
-  m_Radius: 0.3
---- !u!114 &201771925237026209
+  m_Radius: 0.27
+--- !u!114 &8884593885696945479
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8700250177259621602}
+  m_GameObject: {fileID: 4971900803104688326}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1b122f870ce2355468a2c6667abbf248, type: 3}
+  m_Script: {fileID: 11500000, guid: 34986a55fcd5fa743b4ec62ef04f3843, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ActionPlayer
+  m_EditorClassIdentifier: Assembly-CSharp::NpcBrain
   characterSheet: {fileID: 2800000, guid: 27a4b9eead95796418b7d5c86225297b, type: 3}
-  startingWeapon: 0
-  moveSpeed: 7
-  strideLength: 5.6
-  shotMask:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  pickupRadius: 1.35
---- !u!82 &1944192001303066554
+  characterVariant: 1
+  room: {fileID: 0}
+  walkSpeed: 1.8
+  runSpeed: 4.6
+  sightRadius: 12
+  hearingRadius: 20
+  memorySeconds: 10
+  maxHealth: 2
+  disposition: 0
+  state: 0
+  reason: 
+  health: 0
+  canSeePlayer: 0
+  alarmed: 0
+  lastKnownPosition: {x: 0, y: 0}
+--- !u!82 &8569276949955853528
 AudioSource:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8700250177259621602}
+  m_GameObject: {fileID: 4971900803104688326}
   m_Enabled: 1
   serializedVersion: 4
   OutputAudioMixerGroup: {fileID: 0}
@@ -216,13 +224,13 @@ AudioSource:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
---- !u!114 &5038357920232593070
+--- !u!114 &8107418500738217385
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8700250177259621602}
+  m_GameObject: {fileID: 4971900803104688326}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5af690a150ad1434ba73952b7eb08dc4, type: 3}
@@ -231,5 +239,5 @@ MonoBehaviour:
   pistol: {fileID: 8300000, guid: 11761c14b04de5e4483d618ebf0ec8d3, type: 3}
   shotgun: {fileID: 8300000, guid: f6a93c5f2fc4100449c3b57cc9a9a73b, type: 3}
   automatic: {fileID: 8300000, guid: a457d7845b170b940a5f4a138b59ecb2, type: 3}
-  volume: 0.38
-  spatial: 0
+  volume: 0.25
+  spatial: 1

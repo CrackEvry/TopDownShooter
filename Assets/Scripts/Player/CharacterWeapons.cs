@@ -15,9 +15,9 @@ public readonly struct CharacterWeaponSettings
         switch (kind)
         {
             case CharacterWeapon.Knife: return new CharacterWeaponSettings("MES", 0, 0.34f, 0, 0, 0, 2, 1.18f);
-            case CharacterWeapon.Pistol: return new CharacterWeaponSettings("PISTOOL", 12, 0.17f, 1, 0, 0.75f, 1, 35);
-            case CharacterWeapon.Shotgun: return new CharacterWeaponSettings("SHOTGUN", 6, 0.65f, 7, 16, 1.1f, 1, 22);
-            case CharacterWeapon.Automatic: return new CharacterWeaponSettings("AUTOMATISCH", 30, 0.085f, 1, 3, 0.95f, 1, 35);
+            case CharacterWeapon.Pistol: return new CharacterWeaponSettings("PISTOOL", 12, 0.13f, 1, 0, 0.6f, 1, 35);
+            case CharacterWeapon.Shotgun: return new CharacterWeaponSettings("SHOTGUN", 6, 0.48f, 7, 16, 0.85f, 1, 22);
+            case CharacterWeapon.Automatic: return new CharacterWeaponSettings("AUTOMATISCH", 30, 0.065f, 1, 3, 0.75f, 1, 35);
             default: return new CharacterWeaponSettings("LEGE HANDEN", 0, 0.38f, 0, 0, 0, 1, 0.85f);
         }
     }
@@ -31,22 +31,24 @@ public sealed class CharacterSpriteAtlas : System.IDisposable
     public readonly Material Material;
     public readonly Material TraceMaterial;
     readonly Material glowMaterial;
-    public readonly Sprite Idle, PistolPose, LongGunPose, Thigh, Shin, Flash, Glow;
+    public readonly Sprite Idle, PistolPose, LongGunPose, Thigh, Shin, Flash, Glow, Corpse;
     public readonly Sprite[] Strike;
     readonly Sprite[] weapons = new Sprite[5];
     readonly System.Collections.Generic.List<Sprite> owned = new System.Collections.Generic.List<Sprite>();
     readonly Texture2D texture, glowTexture;
 
-    public CharacterSpriteAtlas(Texture2D sheet)
+    public CharacterSpriteAtlas(Texture2D sheet, int characterVariant = 0)
     {
         texture = sheet;
         var shader = Shader.Find("Universal Render Pipeline/2D/Sprite-Unlit-Default");
         if (shader == null) shader = Shader.Find("Sprites/Default");
         Material = new Material(shader) { mainTexture = sheet };
         TraceMaterial = new Material(Shader.Find("Sprites/Default")) { mainTexture = Texture2D.whiteTexture };
-        Idle = Slice("Empty hands / reference 2", 4, 571, 24, 15, 12, 9);
-        PistolPose = Slice("Two handed pistol", 4, 498, 24, 24, 12, 18);
-        LongGunPose = Slice("Long gun support", 5, 527, 23, 28, 11, 21);
+        int column = Mathf.Clamp(characterVariant, 0, 4) * 32;
+        Corpse = Slice("Fallen character / supplied death pose", Mathf.Clamp(characterVariant, 0, 4) * 64, 16, 64, 64, 32, 32);
+        Idle = Slice("Empty hands / reference 2", 4 + column, 571, 24, 15, 12, 9);
+        PistolPose = Slice("Two handed pistol", 4 + column, 498, 24, 24, 12, 18);
+        LongGunPose = Slice("Long gun support", 5 + column, 527, 23, 28, 11, 21);
         Strike = new[] {
             Slice("Strike 1", 451, 566, 25, 20, 13, 14),
             Slice("Strike 2", 483, 571, 25, 16, 13, 9),
@@ -82,6 +84,17 @@ public sealed class CharacterSpriteAtlas : System.IDisposable
     }
     public Sprite Weapon(CharacterWeapon kind) => weapons[(int)kind];
     public static float WeaponRotation(CharacterWeapon kind) => kind == CharacterWeapon.Knife ? -90 : kind == CharacterWeapon.Pistol ? 180 : 90;
+    // Pixel positions measured at the end of each barrel, relative to its grip pivot.
+    public static Vector3 BarrelTip(CharacterWeapon kind)
+    {
+        switch (kind)
+        {
+            case CharacterWeapon.Pistol: return new Vector3(-6f, 2f, 0) / PixelsPerUnit;
+            case CharacterWeapon.Shotgun: return new Vector3(0.5f, -21f, 0) / PixelsPerUnit;
+            case CharacterWeapon.Automatic: return new Vector3(0.5f, -19f, 0) / PixelsPerUnit;
+            default: return Vector3.zero;
+        }
+    }
     public SpriteRenderer Part(string name, Transform parent, Sprite sprite, int order)
     {
         var renderer = new GameObject(name).AddComponent<SpriteRenderer>();
